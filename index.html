@@ -204,6 +204,193 @@
 
     SEARCH_FORM.addEventListener('submit', ev=>{ev.preventDefault(); const q=SEARCH_INPUT.value.trim(); if(!q) return; lastQuery=q; performSearch(q);});
     SEARCH_INPUT.addEventListener('keydown', e=>{if(e.key==='Enter'){e.preventDefault(); SEARCH_FORM.requestSubmit();}});
+    const RESULTS_CONTAINER = document.getElementById('results-container');
+const SEARCH_FORM = document.getElementById('search-form');
+const SEARCH_INPUT = document.getElementById('search-input');
+const LOADING_MESSAGE = document.getElementById('loading-message');
+const INITIAL_MESSAGE = document.getElementById('initial-message');
+const INFINITE_LOADER = document.getElementById('infinite-loader');
+
+const filters = { brand:'', minRating:null, maxPrice:null, retailer:'', inStock:false, fastDelivery:false };
+const PAGE_SIZE = 6;
+let currentResultSet = [];
+let renderIndex = 0;
+let isLoadingMore = false;
+
+// Populate brand dropdown
+(function populateBrands() {
+  const brands = ["Sony","Apple","boAt","JBL","Sennheiser","Anker","Philips","Bose","Skullcandy"];
+  const el = document.getElementById('brand-filter'); 
+  brands.forEach(b => { const opt=document.createElement('option'); opt.value=b; opt.textContent=b; el.appendChild(opt); });
+})();
+
+const formatCurrency = price => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',minimumFractionDigits:0}).format(price);
+
+function renderStars(rating) {
+  const full = Math.floor(rating), half = (rating-full)>=0.5;
+  let out=''; for(let i=0;i<full;i++) out+='<span class="star">★</span>';
+  if(half) out+='<span class="half-star">★</span>';
+  for(let i=full+(half?1:0); i<5;i++) out+='<span class="text-gray-300">★</span>';
+  return out;
+}
+
+function clearResults(){ RESULTS_CONTAINER.innerHTML=''; }
+
+function renderProductCard(product){
+  const id='prod-'+Math.random().toString(36).slice(2,9);
+  const lowestOverall=Math.min(...product.vendors.map(v=>v.lowest_price));
+  let vendorsHtml='';
+  product.vendors.forEach((v,vi)=>{
+    const sellersTableHtml=v.sellers.map(s=>`
+      <tr class="border-b last:border-b-0 hover:bg-gray-50 transition">
+        <td class="px-4 py-3 text-sm font-medium text-gray-700">${s.name}</td>
+        <td class="px-4 py-3 text-lg ${s.price===v.lowest_price?'text-green-600 font-bold':'text-gray-800'}">${formatCurrency(s.price)} ${s.price===v.lowest_price?'<span class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Lowest!</span>':''}</td>
+        <td class="px-4 py-3 text-sm">${renderStars(s.rating)} <span class="text-gray-600 text-sm ml-2">(${s.reviews})</span></td>
+        <td class="px-4 py-3 text-right"><a class="bg-red-500 text-white px-3 py-2 rounded-md text-sm hover:bg-red-600" href="${s.affiliate_link}" target="_blank">Go to Store</a></td>
+      </tr>`).join('');
+    vendorsHtml+=`
+      <div class="border-t border-gray-200 mt-3">
+        <div class="flex justify-between items-center p-3 bg-gray-50 cursor-pointer" onclick="toggleRetailer('${id}', ${vi})">
+          <div class="font-semibold text-gray-700">${v.name} (Lowest: ${formatCurrency(v.lowest_price)})</div>
+          <div id="ret-arrow-${id}-${vi}" class="text-red-500">&darr;</div>
+        </div>
+        <div id="retailer-${id}-${vi}" class="retailer-content px-3 overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200 mb-3">
+            <thead class="bg-gray-100">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Seller</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rating</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-100">${sellersTableHtml}</tbody>
+          </table>
+        </div>
+      </div>`;
+  });
+  const html=`
+    <div class="product-card bg-white rounded-xl shadow-sm overflow-hidden transition-all duration-200">
+      <div class="flex flex-col sm:flex-row p-5 items-center gap-4">
+        <div class="flex-shrink-0">
+          <img src="${product.image_url}" alt="${product.product_name}" class="w-24 h-24 object-contain rounded-lg border border-gray-100" onerror="this.onerror=null;this.src='https://placehold.co/96x96/D1D5DB/4B5563?text=N/A'"/>
+        </div>
+        <div class="flex-grow">
+          <h2 class="text-lg font-semibold text-gray-800 line-clamp-2">${product.product_name}</h2>
+          <div class="mt-1 text-sm text-gray-500">Brand: ${product.brand} • ${product.vendors.length} retailers</div>
+        </div>
+        <div class="flex-shrink-0 text-right mt-3 sm:mt-0">
+          <div class="text-sm text-gray-500">Lowest Price</div>
+          <div class="text-2xl font-extrabold text-red-600">${formatCurrency(lowestOverall)}</div>
+          <button id="expand-${id}" class="mt-2 text-sm text-red-500 font-semibold hover:text-red-700" onclick="toggleDetails('${id}')">Compare Prices &nbsp;&darr;</button>
+        </div>
+      </div>
+      <div id="details-${id}" class="details-content px-5 pt-3">${vendorsHtml}</div>
+    </div>`;
+  RESULTS_CONTAINER.insertAdjacentHTML('beforeend', html);
+}
+
+window.toggleDetails=function(id){const el=document.getElementById('details-'+id);if(!el)return; el.classList.toggle('expanded'); const btn=document.getElementById('expand-'+id); if(btn) btn.innerHTML=el.classList.contains('expanded')?'Hide Comparison &nbsp;&uarr;':'Compare Prices &nbsp;&darr;';}
+window.toggleRetailer=function(id,ri){const el=document.getElementById(`retailer-${id}-${ri}`);const arrow=document.getElementById(`ret-arrow-${id}-${ri}`); if(!el)return; el.classList.toggle('expanded'); if(arrow) arrow.innerHTML=el.classList.contains('expanded')?'↑':'↓';}
+
+function renderNextChunk(){
+  if(isLoadingMore) return;
+  isLoadingMore=true;
+  INFINITE_LOADER.classList.remove('hidden');
+  setTimeout(()=>{
+    const next=currentResultSet.slice(renderIndex,renderIndex+PAGE_SIZE);
+    if(next.length===0){INFINITE_LOADER.classList.add('hidden');isLoadingMore=false;return;}
+    next.forEach(p=>renderProductCard(p));
+    renderIndex+=next.length;
+    INFINITE_LOADER.classList.add('hidden');
+    isLoadingMore=false;
+  },350);
+}
+
+const sentinel=document.createElement('div'); document.body.appendChild(sentinel);
+const obs=new IntersectionObserver(entries=>{entries.forEach(e=>{if(e.isIntersecting&&currentResultSet.length>0){renderNextChunk();}});},{root:null,rootMargin:'400px',threshold:0});
+obs.observe(sentinel);
+
+function showLoading(){ INITIAL_MESSAGE.classList.add('hidden'); LOADING_MESSAGE.classList.remove('hidden'); RESULTS_CONTAINER.innerHTML=''; INFINITE_LOADER.classList.add('hidden'); renderIndex=0; currentResultSet=[]; }
+function hideLoading(){ LOADING_MESSAGE.classList.add('hidden'); }
+
+async function fetchProducts(query){
+  const url = 'https://amazon-products-api.p.rapidapi.com/get-product-data';
+  const apiKey = '252b454267e5ff8ce30f2931cb2e8f13b98dcd9ff2a153ed898d7'; // your key
+
+  // We are searching by ASIN
+  const body = {
+    asin: query,
+    host: 'www.amazon.com'
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-rapidapi-host': 'amazon-products-api.p.rapidapi.com',
+        'x-rapidapi-key': apiKey
+      },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+
+    // Format the API response into the structure our HTML expects
+    let product = {
+      product_name: data.title || 'No Title',
+      brand: data.brand || 'Unknown',
+      image_url: data.image || 'https://placehold.co/96x96/D1D5DB/4B5563?text=N/A',
+      vendors: [{
+        name: "Amazon",
+        lowest_price: data.price?.current_price || data.price?.value || 0,
+        sellers: [{
+          name: data.sold_by || 'Amazon',
+          price: data.price?.current_price || data.price?.value || 0,
+          rating: data.rating || 0,
+          reviews: data.reviews?.total_reviews || 0,
+          inStock: data.availability?.in_stock || true,
+          fastDelivery: data.prime || false,
+          affiliate_link: data.url || '#'
+        }]
+      }]
+    };
+
+    return [product];
+
+  } catch (err) {
+    console.error('API fetch error:', err);
+    return [];
+  }
+}
+
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+let lastQuery=''; let refilterTimer=null;
+function triggerRefilter(){if(!lastQuery) return; clearTimeout(refilterTimer); refilterTimer=setTimeout(()=>performSearch(lastQuery),250);}
+
+document.getElementById('brand-filter').addEventListener('change', e=>{filters.brand=e.target.value||''; triggerRefilter();});
+document.getElementById('rating-filter').addEventListener('change', e=>{filters.minRating=e.target.value?parseFloat(e.target.value):null; triggerRefilter();});
+document.getElementById('price-filter').addEventListener('change', e=>{filters.maxPrice=e.target.value?parseInt(e.target.value,10):null; triggerRefilter();});
+document.getElementById('retailer-filter').addEventListener('change', e=>{filters.retailer=e.target.value||''; triggerRefilter();});
+document.getElementById('inStock-filter').addEventListener('change', e=>{filters.inStock=e.target.checked; triggerRefilter();});
+document.getElementById('fastDelivery-filter').addEventListener('change', e=>{filters.fastDelivery=e.target.checked; triggerRefilter();});
+
+async function performSearch(query){
+  if(!query) return;
+  showLoading();
+  try{
+    currentResultSet = await fetchProducts(query);
+    hideLoading();
+    clearResults();
+    renderIndex=0;
+    if(currentResultSet.length===0){RESULTS_CONTAINER.innerHTML=`<p class="text-center text-gray-500 p-6 bg-yellow-50 rounded-lg">No products found for "<strong>${escapeHtml(query)}</strong>".</p>`; return;}
+    renderNextChunk();
+  }catch(err){console.error(err); hideLoading(); RESULTS_CONTAINER.innerHTML=`<p class="text-center text-red-500 p-6 bg-yellow-50 rounded-lg">Error fetching products. Try again.</p>`;}
+}
+
+SEARCH_FORM.addEventListener('submit', ev=>{ev.preventDefault(); const q=SEARCH_INPUT.value.trim(); if(!q) return; lastQuery=q; performSearch(q);});
+SEARCH_INPUT.addEventListener('keydown', e=>{if(e.key==='Enter'){e.preventDefault(); SEARCH_FORM.requestSubmit();}});
   </script>
 </body>
 </html>
