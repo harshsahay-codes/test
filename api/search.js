@@ -1,17 +1,14 @@
 import fetch from "node-fetch";
 
-// The handler function is what Replit will execute when the endpoint is hit.
 export default async function handler(req, res) {
-  // 1. Get the 'q' (query) parameter from the request URL.
   const query = req.query.q;
 
-  // 2. Simple check to ensure a search query was provided.
   if (!query) {
-    return res.status(400).json({ "error": "Query required" });
+    return res.status(400).json({ error: "Query required" });
   }
 
   try {
-    // 3. Make the API request to the Amazon Products API.
+    // Fetch from Amazon Products API
     const response = await fetch(
       `https://amazon-products-api.p.rapidapi.com/get-product-data?keyword=${encodeURIComponent(query)}`,
       {
@@ -23,22 +20,20 @@ export default async function handler(req, res) {
       }
     );
 
-    // 4. Check if the API request itself returned an error
     if (!response.ok) {
-        let errorData;
-        try {
-            errorData = await response.json();
-        } catch (e) {
-            errorData = { message: response.statusText || "Unknown API error" };
-        }
-        return res.status(response.status).json({ "error": `API call failed with status ${response.status}: ${errorData.message || ''}` });
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { message: response.statusText || "Unknown API error" };
+      }
+      return res.status(response.status).json({ error: `API call failed with status ${response.status}: ${errorData.message || ''}` });
     }
 
-    // 5. Convert the response to JSON format.
     const rawData = await response.json();
 
-    // 6. Transform raw API data to match HTML/JS structure
-    const data = rawData.map(item => ({
+    // Transform data to match frontend structure
+    const products = (rawData.products || []).map(item => ({
       product_name: item.title || "Unknown Product",
       brand: item.brand || "Unknown Brand",
       image_url: item.images?.[0] || "https://placehold.co/218x218/D1D5DB/4B5563?text=N/A",
@@ -62,12 +57,10 @@ export default async function handler(req, res) {
       ]
     }));
 
-    // 7. Send transformed data back to client
-    res.status(200).json(data);
+    res.status(200).json({ products });
 
   } catch (err) {
-    // 8. Handle network errors or other unexpected errors.
     console.error(err);
-    res.status(500).json({ "error": "An internal server error occurred." });
+    res.status(500).json({ error: "An internal server error occurred." });
   }
 }
