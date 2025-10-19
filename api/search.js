@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+// /api/search.js
 
 export default async function handler(req, res) {
   const query = req.query.q;
@@ -8,32 +8,43 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Fetch from Amazon Products API
+    // Call Amazon Products API via RapidAPI
     const response = await fetch(
       `https://amazon-products-api.p.rapidapi.com/get-product-data?keyword=${encodeURIComponent(query)}`,
       {
         method: "GET",
         headers: {
           "X-RapidAPI-Key": "252b454267e5ff8ce30f2931cb2e8f13b98dcd9ff2a153ed898d7",
-          "X-RapidAPI-Host": "amazon-products-api.p.rapidapi.com"
-        }
+          "X-RapidAPI-Host": "amazon-products-api.p.rapidapi.com",
+        },
       }
     );
 
+    // Read response as text first (helps debug unexpected responses)
+    const text = await response.text();
+
     if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        errorData = { message: response.statusText || "Unknown API error" };
-      }
-      return res.status(response.status).json({ error: `API call failed with status ${response.status}: ${errorData.message || ''}` });
+      console.error("API Error:", text);
+      return res.status(response.status).json({
+        error: `API call failed with status ${response.status}`,
+        raw: text,
+      });
     }
 
-    const rawData = await response.json();
+    // Try to parse JSON safely
+    let rawData;
+    try {
+      rawData = JSON.parse(text);
+    } catch (err) {
+      console.error("Failed to parse JSON from API:", text);
+      return res.status(500).json({
+        error: "Invalid JSON received from API",
+        raw: text,
+      });
+    }
 
-    // Transform data to match frontend structure
-    const products = (rawData.products || []).map(item => ({
+    // Transform data to match your frontend format
+    const products = (rawData.products || []).map((item) => ({
       product_name: item.title || "Unknown Product",
       brand: item.brand || "Unknown Brand",
       image_url: item.images?.[0] || "https://placehold.co/218x218/D1D5DB/4B5563?text=N/A",
@@ -50,17 +61,18 @@ export default async function handler(req, res) {
               salesRank: item.salesRank || 0,
               inStock: item.inStock ?? true,
               fastDelivery: item.fastDelivery ?? true,
-              affiliate_link: item.affiliateLink || "#"
-            }
-          ]
-        }
-      ]
+              affiliate_link: item.affiliateLink || "#",
+            },
+          ],
+        },
+      ],
     }));
 
     res.status(200).json({ products });
-
   } catch (err) {
-    console.error(err);
+    console.error("Unexpected server error:", err);
     res.status(500).json({ error: "An internal server error occurred." });
   }
+}
+
 }
