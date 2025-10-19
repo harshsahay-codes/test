@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OmniPrice — Demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap');
+    :root { --primary: #EF4444; }
+    body { font-family: 'Inter', sans-serif; background:#f7f9fb; color:#111827; }
+    .details-content { max-height:0; overflow:hidden; transition:max-height .35s ease; }
+    .details-content.expanded { max-height:600px; padding-top:0.75rem; }
+    .retailer-content { max-height:0; overflow:hidden; transition:max-height .35s ease; }
+    .retailer-content.expanded { max-height:360px; }
+    .product-card { transition: transform .15s ease, box-shadow .15s ease; }
+    .product-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(2,6,23,0.08); }
+    .star { color: #f59e0b; } /* amber-400 */
+    .half-star { position: relative; display:inline-block; width:0.94em; overflow:hidden; }
+    .half-star::before { content: '★'; color:#f59e0b; position:absolute; left:0; top:0; width:50%; overflow:hidden; }
+    /* Loading spinner */
+    .spinner { border-top-color: var(--primary); animation: spin 1s linear infinite; border-radius:9999px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* Small responsive tweaks */
+    @media (max-width:640px){ .filter-bar { overflow-x:auto; } .filter-item { min-width: 140px; } }
+  </style>
+</head>
+<body class="min-h-screen p-4 sm:p-8">
+  <div class="max-w-5xl mx-auto">
+    <!-- Header -->
+    <header class="text-center mb-6">
+      <h1 class="text-4xl font-extrabold text-gray-800">OmniPrice</h1>
+      <p class="text-gray-500">Compare prices across retailers — demo (mock data)</p>
+    </header>
+
+    <!-- Search form -->
+    <form id="search-form" class="flex flex-col sm:flex-row gap-3 mb-4">
+      <input id="search-input" class="flex-1 p-3 rounded-lg border border-gray-200 text-lg" placeholder="Search (e.g., headphones, AirPods, WH-1000XM5)" required />
+      <button id="search-button" class="bg-red-500 text-white px-5 py-3 rounded-lg font-semibold hover:bg-red-600">Search</button>
+    </form>
+
+    <!-- Top Filter Bar -->
+    <div class="filter-bar bg-white rounded-xl shadow-sm p-3 mb-6 flex gap-3 items-center flex-wrap">
+      <!-- Brand -->
+      <div class="filter-item">
+        <label class="text-xs text-gray-600 block mb-1">Brand</label>
+        <select id="brand-filter" class="border rounded p-2 text-sm">
+          <option value="">All Brands</option>
+        </select>
+      </div>
+
+      <!-- Rating -->
+      <div class="filter-item">
+        <label class="text-xs text-gray-600 block mb-1">Min Rating</label>
+        <select id="rating-filter" class="border rounded p-2 text-sm">
+          <option value="">Any</option>
+          <option value="4.5">4.5★ & up</option>
+          <option value="4">4★ & up</option>
+          <option value="3.5">3.5★ & up</option>
+          <option value="3">3★ & up</option>
+        </select>
+      </div>
+
+      <!-- Price -->
+      <div class="filter-item">
+        <label class="text-xs text-gray-600 block mb-1">Price (max)</label>
+        <select id="price-filter" class="border rounded p-2 text-sm">
+          <option value="">No limit</option>
+          <option value="5000">₹5,000</option>
+          <option value="10000">₹10,000</option>
+          <option value="20000">₹20,000</option>
+          <option value="50000">₹50,000</option>
+        </select>
+      </div>
+
+      <!-- Retailer -->
+      <div class="filter-item">
+        <label class="text-xs text-gray-600 block mb-1">Retailer</label>
+        <select id="retailer-filter" class="border rounded p-2 text-sm">
+          <option value="">All</option>
+          <option value="Amazon">Amazon</option>
+          <option value="Flipkart">Flipkart</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <!-- In stock / Fast delivery -->
+      <div class="filter-item flex items-center gap-2">
+        <input type="checkbox" id="inStock-filter" />
+        <label class="text-sm text-gray-700">In stock</label>
+      </div>
+      <div class="filter-item flex items-center gap-2">
+        <input type="checkbox" id="fastDelivery-filter" />
+        <label class="text-sm text-gray-700">Fast delivery</label>
+      </div>
+
+      <!-- Sort hint -->
+      <div class="ml-auto text-xs text-gray-500">Sorted by relevance (rating × reviews × popularity)</div>
+    </div>
+
+    <!-- Results area -->
+    <main id="results-root">
+      <div id="initial-message" class="text-center text-gray-500 p-8 bg-white rounded-xl shadow-lg">
+        <h2 class="text-lg font-semibold mb-2">Ready to Compare</h2>
+        <p>Type a product and hit Search. Demo uses mock data and supports filters, infinite scroll and drilldowns.</p>
+      </div>
+
+      <div id="loading-message" class="hidden flex flex-col items-center p-8">
+        <div class="spinner h-10 w-10 border-4 border-gray-200 mb-3"></div>
+        <p class="text-gray-500">Searching for the best prices...</p>
+      </div>
+
+      <div id="results-container" class="space-y-6 mt-4"></div>
+
+      <!-- Infinite scroll loader -->
+      <div id="infinite-loader" class="hidden text-center p-6 text-gray-500">
+        <div class="spinner h-8 w-8 border-4 border-gray-200 mx-auto mb-2"></div>
+        Loading more...
+      </div>
+    </main>
+  </div>
+
+  <script>
+    /***********************
+     * Mock dataset (expanded)
+     * Each product has vendors[] with sellers[] that include rating, reviews and salesRank
+     ***********************/
+    const MOCK_PRODUCTS = [
+      {
+        product_name: "Sony WH-1000XM5",
+        brand: "Sony",
+        image_url: "https://m.media-amazon.com/images/I/71o8Q5XJS5L._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 29999, sellers: [
+            { name: "Amazon (Fulfilled)", price:29999, affiliate_link:"#", rating:4.7, reviews:12000, salesRank:8000, inStock:true, fastDelivery:true },
+            { name: "Seller B", price:30500, affiliate_link:"#", rating:4.4, reviews:800, salesRank:600, inStock:true, fastDelivery:false }
+          ]},
+          { name:"Flipkart", lowest_price: 29850, sellers: [
+            { name: "Flipkart Official", price:29850, affiliate_link:"#", rating:4.6, reviews:4200, salesRank:3000, inStock:true, fastDelivery:true }
+          ]},
+          { name:"Other", lowest_price: 30200, sellers: [
+            { name: "Retailer X", price:30200, affiliate_link:"#", rating:4.2, reviews:230, salesRank:200, inStock:true, fastDelivery:false }
+          ]}
+        ]
+      },
+      {
+        product_name: "Apple AirPods Pro (2nd Gen)",
+        brand: "Apple",
+        image_url: "https://m.media-amazon.com/images/I/71bhWgQK-cL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 24999, sellers: [
+            { name: "Amazon (Fulfilled)", price:24999, affiliate_link:"#", rating:4.6, reviews:15000, salesRank:12000, inStock:true, fastDelivery:true },
+            { name: "Seller Z", price:25300, affiliate_link:"#", rating:4.3, reviews:400, salesRank:300, inStock:true, fastDelivery:false }
+          ]},
+          { name:"Flipkart", lowest_price: 24799, sellers: [
+            { name: "Flipkart Official", price:24799, affiliate_link:"#", rating:4.6, reviews:9800, salesRank:7000, inStock:true, fastDelivery:true }
+          ]}
+        ]
+      },
+      {
+        product_name: "boAt Rockerz 450",
+        brand: "boAt",
+        image_url: "https://m.media-amazon.com/images/I/61u1VALn6JL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 1999, sellers: [
+            { name: "Amazon", price:1999, affiliate_link:"#", rating:4.0, reviews:2500, salesRank:2000, inStock:true, fastDelivery:false }
+          ]},
+          { name:"Other", lowest_price: 1899, sellers: [
+            { name: "Reliance Digital", price:1899, affiliate_link:"#", rating:4.1, reviews:1200, salesRank:1000, inStock:true, fastDelivery:true }
+          ]}
+        ]
+      },
+      {
+        product_name: "JBL Tune 760NC",
+        brand: "JBL",
+        image_url: "https://m.media-amazon.com/images/I/71+Mi6EJIdL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 6999, sellers: [
+            { name:"Amazon", price:6999, affiliate_link:"#", rating:4.2, reviews:1800, salesRank:1500, inStock:true, fastDelivery:false }
+          ]},
+          { name:"Flipkart", lowest_price: 6899, sellers: [
+            { name:"Flipkart Official", price:6899, affiliate_link:"#", rating:4.3, reviews:1200, salesRank:1100, inStock:true, fastDelivery:true }
+          ]}
+        ]
+      },
+      {
+        product_name: "Sennheiser HD 450BT",
+        brand: "Sennheiser",
+        image_url: "https://m.media-amazon.com/images/I/61z3vZb1DUL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 10999, sellers: [
+            { name:"Amazon", price:10999, affiliate_link:"#", rating:4.1, reviews:500, salesRank:400, inStock:true, fastDelivery:false }
+          ]},
+          { name:"Other", lowest_price: 10499, sellers: [
+            { name:"Retailer A", price:10499, affiliate_link:"#", rating:4.0, reviews:150, salesRank:120, inStock:true, fastDelivery:false }
+          ]}
+        ]
+      },
+      // add more mock products to reach a sensible list for infinite scroll
+      {
+        product_name: "Anker Soundcore Life Q35",
+        brand: "Anker",
+        image_url: "https://m.media-amazon.com/images/I/61qNQf3p6IL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 8999, sellers: [
+            { name:"Amazon", price:8999, affiliate_link:"#", rating:4.3, reviews:2400, salesRank:1800, inStock:true, fastDelivery:true }
+          ]},
+          { name:"Other", lowest_price: 8500, sellers: [
+            { name:"Retailer Z", price:8500, affiliate_link:"#", rating:4.0, reviews:150, salesRank:80, inStock:false, fastDelivery:false }
+          ]}
+        ]
+      },
+      {
+        product_name: "Sony MDR-ZX110",
+        brand: "Sony",
+        image_url: "https://m.media-amazon.com/images/I/61Yf3u9k6tL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 799, sellers: [
+            { name:"Amazon", price:799, affiliate_link:"#", rating:3.9, reviews:2000, salesRank:1500, inStock:true, fastDelivery:false }
+          ]}
+        ]
+      },
+      {
+        product_name: "Philips TAH4205BK",
+        brand: "Philips",
+        image_url: "https://m.media-amazon.com/images/I/61t8bG7A2uL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 1499, sellers: [
+            { name:"Amazon", price:1499, affiliate_link:"#", rating:4.0, reviews:500, salesRank:400, inStock:true, fastDelivery:false }
+          ]}
+        ]
+      },
+      {
+        product_name: "Bose QuietComfort 45",
+        brand: "Bose",
+        image_url: "https://m.media-amazon.com/images/I/71C7WcJ3IuL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 30999, sellers: [
+            { name:"Amazon", price:30999, affiliate_link:"#", rating:4.6, reviews:6000, salesRank:4200, inStock:true, fastDelivery:true }
+          ]},
+          { name:"Flipkart", lowest_price: 30499, sellers: [
+            { name:"Flipkart Official", price:30499, affiliate_link:"#", rating:4.6, reviews:4200, salesRank:3500, inStock:true, fastDelivery:true }
+          ]}
+        ]
+      },
+      {
+        product_name: "Skullcandy Crusher Evo",
+        brand: "Skullcandy",
+        image_url: "https://m.media-amazon.com/images/I/61XxF6FksiL._AC_UY218_.jpg",
+        vendors: [
+          { name:"Amazon", lowest_price: 11999, sellers: [
+            { name:"Amazon", price:11999, affiliate_link:"#", rating:4.1, reviews:1100, salesRank:900, inStock:true, fastDelivery:false }
+          ]}
+        ]
+      }
+    ];
+
+    /***************************
+     * App state + helpers
+     ***************************/
+    const RESULTS_CONTAINER = document.getElementById('results-container');
+    const SEARCH_FORM = document.getElementById('search-form');
+    const SEARCH_INPUT = document.getElementById('search-input');
+    const LOADING_MESSAGE = document.getElementById('loading-message');
+    const INITIAL_MESSAGE = document.getElementById('initial-message');
+    const INFINITE_LOADER = document.getElementById('infinite-loader');
+
+    // Filters: brand, rating, price, retailer, inStock, fastDelivery
+    const filters = {
+      brand: '',
+      minRating: null,
+      maxPrice: null,
+      retailer: '',
+      inStock: false,
+      fastDelivery: false
+    };
+
+    // Pagination / infinite scroll
+    const PAGE_SIZE = 6;
+    let currentResultSet = []; // filtered + sorted products
+    let renderIndex = 0;
+    let isLoadingMore = false;
+
+    // Populate brand dropdown from mock data
+    (function populateBrands() {
+      const brands = Array.from(new Set(MOCK_PRODUCTS.map(p => p.brand))).sort();
+      const el = document.getElementById('brand-filter');
+      brands.forEach(b => {
+        const opt = document.createElement('option'); opt.value = b; opt.textContent = b;
+        el.appendChild(opt);
+      });
+    })();
+
+    // Utility: format INR
+    const formatCurrency = price => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',minimumFractionDigits:0}).format(price);
+
+    // Render stars (supports half)
+    function renderStars(rating) {
+      const full = Math.floor(rating);
+      const half = (rating - full) >= 0.5;
+      let out = '';
+      for (let i=0;i<full;i++) out += '<span class="star">★</span>';
+      if (half) out += '<span class="half-star">★</span>';
+      for (let i=full + (half?1:0); i<5; i++) out += '<span class="text-gray-300">★</span>';
+      return out;
+    }
+
+    // Scoring function: rating (60%), reviews (30% via log), salesRank (10% via log)
+    function computeScore(product) {
+      // we compute product-level aggregates:
+      let bestRating = 0, totalReviews = 0, totalSales = 0;
+      product.vendors.forEach(v => {
+        v.sellers.forEach(s => {
+          bestRating = Math.max(bestRating, s.rating || 0);
+          totalReviews += (s.reviews || 0);
+          totalSales += (s.salesRank || 0);
+        });
+      });
+      // normalize logs to avoid huge values
+      const ratingPart = bestRating; // 0-5
+      const reviewsPart = Math.log10(totalReviews + 1); // ~0-5+
+      const salesPart = Math.log10(totalSales + 1);
+      const score = (ratingPart * 0.6) + (reviewsPart * 0.3) + (salesPart * 0.1);
+      return score;
+    }
+
+    // Apply filters to the dataset and sort by score
+    function applyFiltersAndSort(query) {
+      // find matching by product_name includes query
+      let list = MOCK_PRODUCTS.filter(p => p.product_name.toLowerCase().includes(query.toLowerCase()));
+      // brand filter
+      if (filters.brand) list = list.filter(p => p.brand === filters.brand);
+      // price filter (max price)
+      if (filters.maxPrice) list = list.filter(p => {
+        const minVendor = Math.min(...p.vendors.map(v => v.lowest_price));
+        return minVendor <= filters.maxPrice;
+      });
+      // rating filter: keep products where ANY seller in ANY vendor meets minRating
+      if (filters.minRating) list = list.filter(p => {
+        return p.vendors.some(v => v.sellers.some(s => (s.rating || 0) >= filters.minRating));
+      });
+      // retailer filter: keep only products that have that retailer
+      if (filters.retailer) list = list.filter(p => p.vendors.some(v => v.name === filters.retailer));
+      // inStock / fastDelivery filters
+      if (filters.inStock) list = list.filter(p => p.vendors.some(v => v.sellers.some(s => s.inStock)));
+      if (filters.fastDelivery) list = list.filter(p => p.vendors.some(v => v.sellers.some(s => s.fastDelivery)));
+      // compute score and sort
+      list = list.map(p => ({ ...p, _score: computeScore(p) }));
+      list.sort((a,b) => (b._score || 0) - (a._score || 0));
+      return list;
+    }
+
+    // Rendering functions
+    function clearResults() {
+      RESULTS_CONTAINER.innerHTML = '';
+    }
+
+    function renderProductCard(product) {
+      const id = 'prod-' + Math.random().toString(36).slice(2,9);
+      const lowestOverall = Math.min(...product.vendors.map(v => v.lowest_price));
+      // build vendors HTML (first-level)
+      let vendorsHtml = '';
+      product.vendors.forEach((v, vi) => {
+        // only show lowest seller row initially, full list hidden in retailer content
+        const lowestSeller = v.sellers.reduce((a,b) => a.price <= b.price ? a : b);
+        const sellersTableHtml = v.sellers.map(s => `
+          <tr class="border-b last:border-b-0 hover:bg-gray-50 transition">
+            <td class="px-4 py-3 text-sm font-medium text-gray-700">${s.name}</td>
+            <td class="px-4 py-3 text-lg ${s.price === v.lowest_price ? 'text-green-600 font-bold' : 'text-gray-800'}">${formatCurrency(s.price)} ${s.price === v.lowest_price ? '<span class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Lowest!</span>' : ''}</td>
+            <td class="px-4 py-3 text-sm">${renderStars(s.rating)} <span class="text-gray-600 text-sm ml-2">(${s.reviews})</span></td>
+            <td class="px-4 py-3 text-right"><a class="bg-red-500 text-white px-3 py-2 rounded-md text-sm hover:bg-red-600" href="${s.affiliate_link}" target="_blank">Go to Store</a></td>
+          </tr>`).join('');
+
+        vendorsHtml += `
+          <div class="border-t border-gray-200 mt-3">
+            <div class="flex justify-between items-center p-3 bg-gray-50 cursor-pointer" onclick="toggleRetailer('${id}', ${vi})">
+              <div class="font-semibold text-gray-700">${v.name} (Lowest: ${formatCurrency(v.lowest_price)})</div>
+              <div id="ret-arrow-${id}-${vi}" class="text-red-500">&darr;</div>
+            </div>
+            <div id="retailer-${id}-${vi}" class="retailer-content px-3 overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200 mb-3">
+                <thead class="bg-gray-100">
+                  <tr>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Seller</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Rating</th>
+                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Action</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-100">${sellersTableHtml}</tbody>
+              </table>
+            </div>
+          </div>
+        `;
+      });
+
+      const html = `
+        <div class="product-card bg-white rounded-xl shadow-sm overflow-hidden transition-all duration-200">
+          <div class="flex flex-col sm:flex-row p-5 items-center gap-4">
+            <div class="flex-shrink-0">
+              <img src="${product.image_url}" alt="${product.product_name}" class="w-24 h-24 object-contain rounded-lg border border-gray-100" onerror="this.onerror=null;this.src='https://placehold.co/96x96/D1D5DB/4B5563?text=N/A'"/>
+            </div>
+            <div class="flex-grow">
+              <h2 class="text-lg font-semibold text-gray-800 line-clamp-2">${product.product_name}</h2>
+              <div class="mt-1 text-sm text-gray-500">Brand: ${product.brand} • ${product.vendors.length} retailers</div>
+            </div>
+            <div class="flex-shrink-0 text-right mt-3 sm:mt-0">
+              <div class="text-sm text-gray-500">Lowest Price</div>
+              <div class="text-2xl font-extrabold text-red-600">${formatCurrency(lowestOverall)}</div>
+              <button id="expand-${id}" class="mt-2 text-sm text-red-500 font-semibold hover:text-red-700" onclick="toggleDetails('${id}')">Compare Prices &nbsp;&darr;</button>
+            </div>
+          </div>
+          <div id="details-${id}" class="details-content px-5 pt-3">${vendorsHtml}</div>
+        </div>
+      `;
+      RESULTS_CONTAINER.insertAdjacentHTML('beforeend', html);
+    }
+
+    // Toggle functions must be global
+    window.toggleDetails = function(productId) {
+      const el = document.getElementById('details-' + productId);
+      if (!el) return;
+      el.classList.toggle('expanded');
+      const btn = document.getElementById('expand-' + productId);
+      if (btn) btn.innerHTML = el.classList.contains('expanded') ? 'Hide Comparison &nbsp;&uarr;' : 'Compare Prices &nbsp;&darr;';
+    };
+
+    window.toggleRetailer = function(productId, ri) {
+      const el = document.getElementById(`retailer-${productId}-${ri}`);
+      const arrow = document.getElementById(`ret-arrow-${productId}-${ri}`);
+      if (!el) return;
+      el.classList.toggle('expanded');
+      if (arrow) arrow.innerHTML = el.classList.contains('expanded') ? '↑' : '↓';
+    };
+
+    // Render a chunk of current results (infinite scroll)
+    function renderNextChunk() {
+      if (isLoadingMore) return;
+      isLoadingMore = true;
+      INFINITE_LOADER.classList.remove('hidden');
+      setTimeout(() => {
+        const next = currentResultSet.slice(renderIndex, renderIndex + PAGE_SIZE);
+        if (next.length === 0) {
+          INFINITE_LOADER.classList.add('hidden');
+          isLoadingMore = false;
+          return;
+        }
+        next.forEach(p => renderProductCard(p));
+        renderIndex += next.length;
+        INFINITE_LOADER.classList.add('hidden');
+        isLoadingMore = false;
+      }, 350); // small delay to simulate network/render
+    }
+
+    // Infinite scroll observer using IntersectionObserver
+    const sentinel = document.createElement('div');
+    document.body.appendChild(sentinel);
+    const obs = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting && currentResultSet.length > 0) {
+          renderNextChunk();
+        }
+      });
+    }, { root: null, rootMargin: '400px', threshold: 0 });
+    obs.observe(sentinel);
+
+    // Main search flow
+    function showLoading() {
+      INITIAL_MESSAGE.classList.add('hidden');
+      LOADING_MESSAGE.classList.remove('hidden');
+      RESULTS_CONTAINER.innerHTML = '';
+      INFINITE_LOADER.classList.add('hidden');
+      renderIndex = 0;
+      currentResultSet = [];
+    }
+    function hideLoading() {
+      LOADING_MESSAGE.classList.add('hidden');
+    }
+
+    function performSearch(query) {
+      if (!query) return;
+      showLoading();
+      setTimeout(() => {
+        // Apply filters
+        currentResultSet = applyFiltersAndSort(query);
+        hideLoading();
+        RESULTS_CONTAINER.innerHTML = '';
+        renderIndex = 0;
+        if (currentResultSet.length === 0) {
+          RESULTS_CONTAINER.innerHTML = `<p class="text-center text-gray-500 p-6 bg-yellow-50 rounded-lg">No products found for "<strong>${escapeHtml(query)}</strong>". Try a broader search.</p>`;
+          return;
+        }
+        // initially render first chunk
+        renderNextChunk();
+      }, 600); // simulate backend latency
+    }
+
+    // escape helper for messages
+    function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    // Filters UI wiring
+    document.getElementById('brand-filter').addEventListener('change', (e) => {
+      filters.brand = e.target.value || '';
+      triggerRefilter();
+    });
+    document.getElementById('rating-filter').addEventListener('change', (e) => {
+      filters.minRating = e.target.value ? parseFloat(e.target.value) : null;
+      triggerRefilter();
+    });
+    document.getElementById('price-filter').addEventListener('change', (e) => {
+      filters.maxPrice = e.target.value ? parseInt(e.target.value,10) : null;
+      triggerRefilter();
+    });
+    document.getElementById('retailer-filter').addEventListener('change', (e) => {
+      filters.retailer = e.target.value || '';
+      triggerRefilter();
+    });
+    document.getElementById('inStock-filter').addEventListener('change', (e) => {
+      filters.inStock = e.target.checked;
+      triggerRefilter();
+    });
+    document.getElementById('fastDelivery-filter').addEventListener('change', (e) => {
+      filters.fastDelivery = e.target.checked;
+      triggerRefilter();
+    });
+
+    // debounce for quick interactions
+    let refilterTimer = null;
+    function triggerRefilter() {
+      if (!lastQuery) return;
+      clearTimeout(refilterTimer);
+      refilterTimer = setTimeout(()=>performSearch(lastQuery), 250);
+    }
+
+    // Keep last query for refiltering/pagination
+    let lastQuery = '';
+
+    // Search form submit handler
+    SEARCH_FORM.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const q = SEARCH_INPUT.value.trim();
+      if (!q) return;
+      lastQuery = q;
+      performSearch(q);
+    });
+
+    // initial small demo: optional pre-populate input
+    // SEARCH_INPUT.value = 'AirPods'; lastQuery = 'AirPods'; // uncomment to autosearch on load
+
+    // compute filtered + sorted list
+    function applyFiltersAndSort(query) {
+      const list = applyFiltersAndSortNoScore(query);
+      // compute score then sort
+      list.forEach(p => p._score = computeScore(p));
+      list.sort((a,b) => (b._score || 0) - (a._score || 0));
+      return list;
+    }
+
+    // separate helper for readability to avoid recursion confusion
+    function applyFiltersAndSortNoScore(query) {
+      let results = MOCK_PRODUCTS.filter(p => p.product_name.toLowerCase().includes(query.toLowerCase()));
+      if (filters.brand) results = results.filter(p => p.brand === filters.brand);
+      if (filters.maxPrice) results = results.filter(p => Math.min(...p.vendors.map(v => v.lowest_price)) <= filters.maxPrice);
+      if (filters.minRating) results = results.filter(p => p.vendors.some(v => v.sellers.some(s => (s.rating || 0) >= filters.minRating)));
+      if (filters.retailer) results = results.filter(p => p.vendors.some(v => v.name === filters.retailer));
+      if (filters.inStock) results = results.filter(p => p.vendors.some(v => v.sellers.some(s => s.inStock)));
+      if (filters.fastDelivery) results = results.filter(p => p.vendors.some(v => v.sellers.some(s => s.fastDelivery)));
+      return results;
+    }
+
+    // small utility: allow pressing Enter in search to trigger
+    SEARCH_INPUT.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); SEARCH_FORM.requestSubmit(); }
+    });
+
+    // Expose some functions for the UI (already set)
+    window.performSearch = performSearch;
+
+    // Optionally trigger a demo search on load:
+    // performSearch('AirPods');
+  </script>
+</body>
+</html>
