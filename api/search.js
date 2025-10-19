@@ -13,22 +13,18 @@ export default async function handler(req, res) {
   try {
     // 3. Make the API request to the Amazon Products API.
     const response = await fetch(
-      // The URL for the specific endpoint
       `https://amazon-products-api.p.rapidapi.com/get-product-data?keyword=${encodeURIComponent(query)}`,
       {
         method: "GET",
         headers: {
-          // *** YOUR ACTUAL, CORRECTED API KEY IS INSERTED HERE ***
           "X-RapidAPI-Key": "252b454267e5ff8ce30f2931cb2e8f13b98dcd9ff2a153ed898d7",
-          // The correct host for the API
           "X-RapidAPI-Host": "amazon-products-api.p.rapidapi.com"
         }
       }
     );
 
-    // 4. Check if the API request itself returned an error (e.g., 403 Forbidden, 404 Not Found)
+    // 4. Check if the API request itself returned an error
     if (!response.ok) {
-        // Attempt to parse the error response if possible, otherwise use status text.
         let errorData;
         try {
             errorData = await response.json();
@@ -38,15 +34,39 @@ export default async function handler(req, res) {
         return res.status(response.status).json({ "error": `API call failed with status ${response.status}: ${errorData.message || ''}` });
     }
 
-
     // 5. Convert the response to JSON format.
-    const data = await response.json();
+    const rawData = await response.json();
 
-    // 6. Send the data back to the client with a successful 200 status.
+    // 6. Transform raw API data to match HTML/JS structure
+    const data = rawData.map(item => ({
+      product_name: item.title || "Unknown Product",
+      brand: item.brand || "Unknown Brand",
+      image_url: item.images?.[0] || "https://placehold.co/218x218/D1D5DB/4B5563?text=N/A",
+      vendors: [
+        {
+          name: "Amazon",
+          lowest_price: item.price || 0,
+          sellers: [
+            {
+              name: "Amazon",
+              price: item.price || 0,
+              rating: item.rating || 0,
+              reviews: item.reviews || 0,
+              salesRank: item.salesRank || 0,
+              inStock: item.inStock ?? true,
+              fastDelivery: item.fastDelivery ?? true,
+              affiliate_link: item.affiliateLink || "#"
+            }
+          ]
+        }
+      ]
+    }));
+
+    // 7. Send transformed data back to client
     res.status(200).json(data);
 
   } catch (err) {
-    // 7. Handle network errors or other unexpected errors.
+    // 8. Handle network errors or other unexpected errors.
     console.error(err);
     res.status(500).json({ "error": "An internal server error occurred." });
   }
