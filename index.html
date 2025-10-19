@@ -15,7 +15,7 @@
     .retailer-content.expanded { max-height:360px; }
     .product-card { transition: transform .15s ease, box-shadow .15s ease; }
     .product-card:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(2,6,23,0.08); }
-    .star { color: #f59e0b; } /* amber-400 */
+    .star { color: #f59e0b; }
     .half-star { position: relative; display:inline-block; width:0.94em; overflow:hidden; }
     .half-star::before { content: '★'; color:#f59e0b; position:absolute; left:0; top:0; width:50%; overflow:hidden; }
     .spinner { border-top-color: var(--primary); animation: spin 1s linear infinite; border-radius:9999px; }
@@ -31,59 +31,14 @@
     </header>
 
     <form id="search-form" class="flex flex-col sm:flex-row gap-3 mb-4">
-      <input id="search-input" class="flex-1 p-3 rounded-lg border border-gray-200 text-lg" placeholder="Search (e.g., headphones, AirPods, WH-1000XM5)" required />
+      <input id="search-input" class="flex-1 p-3 rounded-lg border border-gray-200 text-lg" placeholder="Search by ASIN (e.g., B08H75RTZ8)" required />
       <button id="search-button" class="bg-red-500 text-white px-5 py-3 rounded-lg font-semibold hover:bg-red-600">Search</button>
     </form>
-
-    <div class="filter-bar bg-white rounded-xl shadow-sm p-3 mb-6 flex gap-3 items-center flex-wrap">
-      <div class="filter-item">
-        <label class="text-xs text-gray-600 block mb-1">Brand</label>
-        <select id="brand-filter" class="border rounded p-2 text-sm"><option value="">All Brands</option></select>
-      </div>
-      <div class="filter-item">
-        <label class="text-xs text-gray-600 block mb-1">Min Rating</label>
-        <select id="rating-filter" class="border rounded p-2 text-sm">
-          <option value="">Any</option>
-          <option value="4.5">4.5★ & up</option>
-          <option value="4">4★ & up</option>
-          <option value="3.5">3.5★ & up</option>
-          <option value="3">3★ & up</option>
-        </select>
-      </div>
-      <div class="filter-item">
-        <label class="text-xs text-gray-600 block mb-1">Price (max)</label>
-        <select id="price-filter" class="border rounded p-2 text-sm">
-          <option value="">No limit</option>
-          <option value="5000">₹5,000</option>
-          <option value="10000">₹10,000</option>
-          <option value="20000">₹20,000</option>
-          <option value="50000">₹50,000</option>
-        </select>
-      </div>
-      <div class="filter-item">
-        <label class="text-xs text-gray-600 block mb-1">Retailer</label>
-        <select id="retailer-filter" class="border rounded p-2 text-sm">
-          <option value="">All</option>
-          <option value="Amazon">Amazon</option>
-          <option value="Flipkart">Flipkart</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
-      <div class="filter-item flex items-center gap-2">
-        <input type="checkbox" id="inStock-filter" />
-        <label class="text-sm text-gray-700">In stock</label>
-      </div>
-      <div class="filter-item flex items-center gap-2">
-        <input type="checkbox" id="fastDelivery-filter" />
-        <label class="text-sm text-gray-700">Fast delivery</label>
-      </div>
-      <div class="ml-auto text-xs text-gray-500">Sorted by relevance (rating × reviews × popularity)</div>
-    </div>
 
     <main id="results-root">
       <div id="initial-message" class="text-center text-gray-500 p-8 bg-white rounded-xl shadow-lg">
         <h2 class="text-lg font-semibold mb-2">Ready to Compare</h2>
-        <p>Type a product and hit Search.</p>
+        <p>Type an ASIN and hit Search.</p>
       </div>
 
       <div id="loading-message" class="hidden flex flex-col items-center p-8">
@@ -108,21 +63,14 @@
     const INITIAL_MESSAGE = document.getElementById('initial-message');
     const INFINITE_LOADER = document.getElementById('infinite-loader');
 
-    const filters = { brand:'', minRating:null, maxPrice:null, retailer:'', inStock:false, fastDelivery:false };
     const PAGE_SIZE = 6;
     let currentResultSet = [];
     let renderIndex = 0;
     let isLoadingMore = false;
 
-    (function populateBrands() {
-      const brands = ["Sony","Apple","boAt","JBL","Sennheiser","Anker","Philips","Bose","Skullcandy"];
-      const el = document.getElementById('brand-filter'); 
-      brands.forEach(b => { const opt=document.createElement('option'); opt.value=b; opt.textContent=b; el.appendChild(opt); });
-    })();
-
     const formatCurrency = price => new Intl.NumberFormat('en-IN',{style:'currency',currency:'INR',minimumFractionDigits:0}).format(price);
 
-    function renderStars(rating) {
+    function renderStars(rating){
       const full=Math.floor(rating), half=(rating-full)>=0.5;
       let out=''; for(let i=0;i<full;i++) out+='<span class="star">★</span>';
       if(half) out+='<span class="half-star">★</span>';
@@ -140,7 +88,7 @@
         const sellersTableHtml=v.sellers.map(s=>`
           <tr class="border-b last:border-b-0 hover:bg-gray-50 transition">
             <td class="px-4 py-3 text-sm font-medium text-gray-700">${s.name}</td>
-            <td class="px-4 py-3 text-lg ${s.price===v.lowest_price?'text-green-600 font-bold':'text-gray-800'}">${formatCurrency(s.price)} ${s.price===v.lowest_price?'<span class="ml-2 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">Lowest!</span>':''}</td>
+            <td class="px-4 py-3 text-lg ${s.price===v.lowest_price?'text-green-600 font-bold':'text-gray-800'}">${formatCurrency(s.price)}</td>
             <td class="px-4 py-3 text-sm">${renderStars(s.rating)} <span class="text-gray-600 text-sm ml-2">(${s.reviews})</span></td>
             <td class="px-4 py-3 text-right"><a class="bg-red-500 text-white px-3 py-2 rounded-md text-sm hover:bg-red-600" href="${s.affiliate_link}" target="_blank">Go to Store</a></td>
           </tr>`).join('');
@@ -165,35 +113,38 @@
             </div>
           </div>`;
       });
-      const html=`
-        <div class="product-card bg-white rounded-xl shadow-sm overflow-hidden transition-all duration-200">
-          <div class="flex flex-col sm:flex-row p-5 items-center gap-4">
-            <div class="flex-shrink-0">
-              <img src="${product.image_url}" alt="${product.product_name}" class="w-24 h-24 object-contain rounded-lg border border-gray-100" onerror="this.onerror=null;this.src='https://placehold.co/96x96/D1D5DB/4B5563?text=N/A'"/>
-            </div>
-            <div class="flex-grow">
-              <h2 class="text-lg font-semibold text-gray-800 line-clamp-2">${product.product_name}</h2>
-              <div class="mt-1 text-sm text-gray-500">Brand: ${product.brand} • ${product.vendors.length} retailers</div>
-            </div>
-            <div class="flex-shrink-0 text-right mt-3 sm:mt-0">
-              <div class="text-sm text-gray-500">Lowest Price</div>
-              <div class="text-2xl font-extrabold text-red-600">${formatCurrency(lowestOverall)}</div>
-              <button id="expand-${id}" class="mt-2 text-sm text-red-500 font-semibold hover:text-red-700" onclick="toggleDetails('${id}')">Compare Prices &nbsp;&darr;</button>
-            </div>
+      const html=`<div class="product-card bg-white rounded-xl shadow-sm overflow-hidden transition-all duration-200">
+        <div class="flex flex-col sm:flex-row p-5 items-center gap-4">
+          <div class="flex-shrink-0">
+            <img src="${product.image_url}" alt="${product.product_name}" class="w-24 h-24 object-contain rounded-lg border border-gray-100"/>
           </div>
-          <div id="details-${id}" class="details-content px-5 pt-3">${vendorsHtml}</div>
-        </div>`;
+          <div class="flex-grow">
+            <h2 class="text-lg font-semibold text-gray-800 line-clamp-2">${product.product_name}</h2>
+            <div class="mt-1 text-sm text-gray-500">Brand: ${product.brand} • ${product.vendors.length} retailers</div>
+          </div>
+          <div class="flex-shrink-0 text-right mt-3 sm:mt-0">
+            <div class="text-sm text-gray-500">Lowest Price</div>
+            <div class="text-2xl font-extrabold text-red-600">${formatCurrency(lowestOverall)}</div>
+          </div>
+        </div>
+        <div id="details-${id}" class="details-content px-5 pt-3">${vendorsHtml}</div>
+      </div>`;
       RESULTS_CONTAINER.insertAdjacentHTML('beforeend', html);
     }
 
-    window.toggleDetails=function(id){const el=document.getElementById('details-'+id);if(!el)return; el.classList.toggle('expanded'); const btn=document.getElementById('expand-'+id); if(btn) btn.innerHTML=el.classList.contains('expanded')?'Hide Comparison &nbsp;&uarr;':'Compare Prices &nbsp;&darr;';}
-    window.toggleRetailer=function(id,ri){const el=document.getElementById(`retailer-${id}-${ri}`);const arrow=document.getElementById(`ret-arrow-${id}-${ri}`); if(!el)return; el.classList.toggle('expanded'); if(arrow) arrow.innerHTML=el.classList.contains('expanded')?'↑':'↓';}
+    window.toggleRetailer=function(id,ri){const el=document.getElementById(`retailer-${id}-${ri}`); const arrow=document.getElementById(`ret-arrow-${id}-${ri}`); if(!el) return; el.classList.toggle('expanded'); if(arrow) arrow.innerHTML=el.classList.contains('expanded')?'↑':'↓';}
 
     function renderNextChunk(){
       if(isLoadingMore) return;
       isLoadingMore=true;
       INFINITE_LOADER.classList.remove('hidden');
-      setTimeout(()=>{const next=currentResultSet.slice(renderIndex,renderIndex+PAGE_SIZE); if(next.length===0){INFINITE_LOADER.classList.add('hidden');isLoadingMore=false;return;} next.forEach(p=>renderProductCard(p)); renderIndex+=next.length; INFINITE_LOADER.classList.add('hidden'); isLoadingMore=false;},350);
+      setTimeout(()=>{
+        const next=currentResultSet.slice(renderIndex,renderIndex+PAGE_SIZE);
+        if(next.length===0){ INFINITE_LOADER.classList.add('hidden'); isLoadingMore=false; return; }
+        next.forEach(p=>renderProductCard(p));
+        renderIndex+=next.length;
+        INFINITE_LOADER.classList.add('hidden'); isLoadingMore=false;
+      }, 300);
     }
 
     const sentinel=document.createElement('div'); document.body.appendChild(sentinel);
@@ -202,53 +153,42 @@
     function showLoading(){ INITIAL_MESSAGE.classList.add('hidden'); LOADING_MESSAGE.classList.remove('hidden'); RESULTS_CONTAINER.innerHTML=''; INFINITE_LOADER.classList.add('hidden'); renderIndex=0; currentResultSet=[]; }
     function hideLoading(){ LOADING_MESSAGE.classList.add('hidden'); }
 
-    async function fetchProducts(query){
-      const res = await fetch(`https://test-rose-xi.vercel.app/api/search?q=${encodeURIComponent(query)}`);
-      const data = await res.json();
-      let products = data.products || [];
-
-      // Apply frontend filters
-      products = products.filter(p=>{
-        if(filters.brand && p.brand!==filters.brand) return false;
-        if(filters.minRating){
-          const bestRating = Math.max(...p.vendors.flatMap(v=>v.sellers.map(s=>s.rating||0)));
-          if(bestRating<filters.minRating) return false;
-        }
-        if(filters.maxPrice){
-          const lowestPrice = Math.min(...p.vendors.map(v=>v.lowest_price));
-          if(lowestPrice>filters.maxPrice) return false;
-        }
-        if(filters.retailer){
-          const hasRetailer = p.vendors.some(v=>v.name.toLowerCase()===filters.retailer.toLowerCase());
-          if(!hasRetailer) return false;
-        }
-        if(filters.inStock){
-          const inStock = p.vendors.some(v=>v.sellers.some(s=>s.inStock));
-          if(!inStock) return false;
-        }
-        if(filters.fastDelivery){
-          const fastDel = p.vendors.some(v=>v.sellers.some(s=>s.fastDelivery));
-          if(!fastDel) return false;
-        }
-        return true;
+    async function fetchProducts(asin){
+      const url = 'https://amazon-products-api.p.rapidapi.com/get-product-data';
+      const apiKey = '252b454267e5ff8ce30f2931cb2e8f13b98dcd9ff2a153ed898d7';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json',
+          'x-rapidapi-host':'amazon-products-api.p.rapidapi.com',
+          'x-rapidapi-key': apiKey
+        },
+        body: JSON.stringify({ asin, host:'www.amazon.com' })
       });
+      const data = await res.json();
+      if(!data) return [];
 
-      return products;
+      return [{
+        product_name: data.title || 'Unknown',
+        brand: data.brand || 'Unknown',
+        image_url: data.images?.[0] || 'https://placehold.co/96x96/D1D5DB/4B5563?text=N/A',
+        vendors:[{
+          name:'Amazon',
+          lowest_price: data.price?.current_price || 0,
+          sellers:[{
+            name:'Amazon',
+            price: data.price?.current_price || 0,
+            rating: data.reviews?.average_rating || 0,
+            reviews: data.reviews?.total_reviews || 0,
+            inStock: data.availability?.in_stock || true,
+            fastDelivery: data.prime || false,
+            affiliate_link: data.url || '#'
+          }]
+        }]
+      }];
     }
 
-    function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-
-    function triggerRefilter(){if(!lastQuery) return; clearTimeout(refilterTimer); refilterTimer=setTimeout(()=>performSearch(lastQuery),250);}
-    let refilterTimer=null;
     let lastQuery='';
-
-    document.getElementById('brand-filter').addEventListener('change', e=>{filters.brand=e.target.value||''; triggerRefilter();});
-    document.getElementById('rating-filter').addEventListener('change', e=>{filters.minRating=e.target.value?parseFloat(e.target.value):null; triggerRefilter();});
-    document.getElementById('price-filter').addEventListener('change', e=>{filters.maxPrice=e.target.value?parseInt(e.target.value,10):null; triggerRefilter();});
-    document.getElementById('retailer-filter').addEventListener('change', e=>{filters.retailer=e.target.value||''; triggerRefilter();});
-    document.getElementById('inStock-filter').addEventListener('change', e=>{filters.inStock=e.target.checked; triggerRefilter();});
-    document.getElementById('fastDelivery-filter').addEventListener('change', e=>{filters.fastDelivery=e.target.checked; triggerRefilter();});
-
     async function performSearch(query){
       if(!query) return;
       showLoading();
@@ -257,9 +197,9 @@
         hideLoading();
         clearResults();
         renderIndex=0;
-        if(currentResultSet.length===0){RESULTS_CONTAINER.innerHTML=`<p class="text-center text-gray-500 p-6 bg-yellow-50 rounded-lg">No products found for "<strong>${escapeHtml(query)}</strong>".</p>`; return;}
+        if(currentResultSet.length===0){ RESULTS_CONTAINER.innerHTML=`<p class="text-center text-gray-500 p-6 bg-yellow-50 rounded-lg">No products found for "<strong>${query}</strong>".</p>`; return;}
         renderNextChunk();
-      }catch(err){console.error(err); hideLoading(); RESULTS_CONTAINER.innerHTML=`<p class="text-center text-red-500 p-6 bg-yellow-50 rounded-lg">Error fetching products. Try again.</p>`;}
+      }catch(err){ console.error(err); hideLoading(); RESULTS_CONTAINER.innerHTML=`<p class="text-center text-red-500 p-6 bg-yellow-50 rounded-lg">Error fetching products. Try again.</p>`;}
     }
 
     SEARCH_FORM.addEventListener('submit', ev=>{ev.preventDefault(); const q=SEARCH_INPUT.value.trim(); if(!q) return; lastQuery=q; performSearch(q);});
